@@ -42,6 +42,10 @@ static RECORDING_STATE: Lazy<Arc<Mutex<RecordingState>>> = Lazy::new(|| {
 static APP_STATUS: Lazy<Arc<Mutex<AppStatus>>> =
     Lazy::new(|| Arc::new(Mutex::new(AppStatus::LoadingModel)));
 
+// Global state for provider info (for menu display)
+static PROVIDER_INFO: Lazy<Arc<Mutex<String>>> =
+    Lazy::new(|| Arc::new(Mutex::new(String::from("Initializing..."))));
+
 struct RecordingState {
     is_recording: bool,
     audio_data: Vec<f32>,
@@ -144,6 +148,13 @@ fn main() {
     tray_menu.append(&hotkey_submenu).ok();
     tray_menu.append(&PredefinedMenuItem::separator()).ok();
 
+    // Add provider info menu item (disabled, just for display)
+    let provider_info = PROVIDER_INFO.lock().unwrap().clone();
+    let provider_item = MenuItem::new(format!("Running on: {}", provider_info), false, None);
+    tray_menu.append(&provider_item).ok();
+
+    tray_menu.append(&PredefinedMenuItem::separator()).ok();
+
     let quit_item = MenuItem::new("Quit", true, None);
     tray_menu.append(&quit_item).ok();
     let quit_id = quit_item.id().clone();
@@ -160,38 +171,93 @@ fn main() {
         .build()
         .expect("Failed to create tray icon");
 
-    // Load the model
+    // Load the model with GPU acceleration if available
     println!("Loading Parakeet model...");
     set_status(AppStatus::LoadingModel, &tray_icon);
 
-    let config = TransducerConfig {
-        decoder: "./model/decoder.int8.onnx".to_string(),
-        encoder: "./model/encoder.int8.onnx".to_string(),
-        joiner: "./model/joiner.int8.onnx".to_string(),
-        tokens: "./model/tokens.txt".to_string(),
-        num_threads: 1,
-        sample_rate: 16_000,
-        feature_dim: 80,
-        debug: false,
-        model_type: "nemo_transducer".to_string(),
-        ..Default::default()
-    };
+    // Try GPU providers in order of preference
+    let providers_to_try = vec![
+        #[cfg(target_os = "windows")]
+        Some("dml".to_string()), // DirectML - works with any GPU on Windows
+        #[cfg(not(target_os = "windows"))]
+        Some("cuda".to_string()), // CUDA for NVIDIA GPUs on Linux/Mac
+        None, // CPU fallback
+    ];
 
-    let recognizer = match TransducerRecognizer::new(config) {
-        Ok(rec) => {
-            println!("✓ Model loaded successfully\n");
-            rec
+    let mut recognizer = None;
+    let mut used_provider = String::from("CPU");
+
+    for provider in providers_to_try {
+        println!(
+            "Trying provider: {:?}",
+            provider.as_ref().unwrap_or(&"CPU".to_string())
+        );
+
+        let config = TransducerConfig {
+            decoder: "./model/decoder.int8.onnx".to_string(),
+            encoder: "./model/encoder.int8.onnx".to_string(),
+            joiner: "./model/joiner.int8.onnx".to_string(),
+            tokens: "./model/tokens.txt".to_string(),
+            num_threads: if provider.is_none() { 4 } else { 1 }, // Use more threads for CPU
+            sample_rate: 16_000,
+            feature_dim: 80,
+            debug: false,
+            model_type: "nemo_transducer".to_string(),
+            provider: provider.clone(),
+            ..Default::default()
+        };
+
+        match TransducerRecognizer::new(config) {
+            Ok(rec) => {
+                used_provider = provider.unwrap_or_else(|| "CPU".to_string());
+                println!(
+                    "✓ Model loaded successfully with {} provider\n",
+                    used_provider
+                );
+                recognizer = Some(rec);
+                break;
+            }
+            Err(e) => {
+                if provider.is_some() {
+                    println!(
+                        "  ⚠ {} provider not available: {}",
+                        provider.as_ref().unwrap(),
+                        e
+                    );
+                    println!("  Trying next provider...\n");
+                } else {
+                    eprintln!("✗ Failed to initialize recognizer even with CPU: {}", e);
+                    eprintln!("\nMake sure the model files exist:");
+                    eprintln!("  - ./model/encoder.int8.onnx");
+                    eprintln!("  - ./model/decoder.int8.onnx");
+                    eprintln!("  - ./model/joiner.int8.onnx");
+                    eprintln!("  - ./model/tokens.txt");
+                    std::process::exit(1);
+                }
+            }
         }
-        Err(e) => {
-            eprintln!("✗ Failed to initialize recognizer: {}", e);
-            eprintln!("\nMake sure the model files exist:");
-            eprintln!("  - ./model/encoder.int8.onnx");
-            eprintln!("  - ./model/decoder.int8.onnx");
-            eprintln!("  - ./model/joiner.int8.onnx");
-            eprintln!("  - ./model/tokens.txt");
-            std::process::exit(1);
-        }
-    };
+    }
+
+    let recognizer = recognizer.unwrap();
+
+    // Store provider info globally for menu display
+    {
+        let provider_display = if used_provider != "CPU" {
+            format!("GPU: {}", used_provider.to_uppercase())
+        } else {
+            "CPU (4 threads)".to_string()
+        };
+        let mut provider_info = PROVIDER_INFO.lock().unwrap();
+        *provider_info = provider_display;
+    }
+
+    if used_provider != "CPU" {
+        println!("🚀 GPU acceleration enabled ({})!", used_provider);
+        println!("   Transcription should be faster and won't freeze the system.\n");
+    } else {
+        println!("ℹ️  Running on CPU (no GPU acceleration available)");
+        println!("   Transcription may cause brief system slowdowns.\n");
+    }
 
     set_status(AppStatus::WaitingForHotkey, &tray_icon);
 
