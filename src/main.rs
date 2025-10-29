@@ -259,6 +259,41 @@ fn main() {
         println!("   Transcription may cause brief system slowdowns.\n");
     }
 
+    // Recreate menu with updated provider info
+    let updated_menu = Menu::new();
+
+    // Recreate hotkey submenu
+    let hotkey_submenu_updated = Submenu::new("Set Hotkey", true);
+    let mut hotkey_map_updated: HashMap<MenuId, (String, RdevKey)> = HashMap::new();
+
+    for (name, key) in &hotkey_options {
+        let menu_item = MenuItem::new(*name, true, None);
+        hotkey_submenu_updated.append(&menu_item).ok();
+        hotkey_map_updated.insert(menu_item.id().clone(), (name.to_string(), *key));
+    }
+
+    updated_menu.append(&hotkey_submenu_updated).ok();
+    updated_menu.append(&PredefinedMenuItem::separator()).ok();
+
+    // Add provider info with actual value
+    let provider_info_text = PROVIDER_INFO.lock().unwrap().clone();
+    let provider_item_updated =
+        MenuItem::new(format!("Running on: {}", provider_info_text), false, None);
+    updated_menu.append(&provider_item_updated).ok();
+
+    updated_menu.append(&PredefinedMenuItem::separator()).ok();
+
+    let quit_item_updated = MenuItem::new("Quit", true, None);
+    updated_menu.append(&quit_item_updated).ok();
+    let quit_id_updated = quit_item_updated.id().clone();
+
+    // Update the tray icon menu
+    tray_icon.set_menu(Some(Box::new(updated_menu)));
+
+    // Use updated hotkey_map and quit_id
+    let hotkey_map = hotkey_map_updated;
+    let quit_id = quit_id_updated;
+
     set_status(AppStatus::WaitingForHotkey, &tray_icon);
 
     println!("Instructions:");

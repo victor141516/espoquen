@@ -134,7 +134,7 @@ Place icon files in the `icons/` directory:
 - **Set Hotkey** submenu: Choose F1-F12 (any function key)
 - **Quit**: Exit the application
 
-**Important:** When you press the configured hotkey, it is captured by the app and won't trigger its default action (e.g., F5 won't refresh a browser page).
+**Important:** When you press the configured hotkey, the app attempts to capture it and prevent its default action. However, some applications (especially web browsers like Chrome) may still detect the keypress due to their own keyboard event handling. For best results, use F9-F12 which are less commonly intercepted by other applications.
 
 ### Tips
 
