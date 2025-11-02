@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use enigo::{Enigo, Keyboard, Settings};
@@ -85,11 +85,20 @@ fn set_status(status: AppStatus, tray_icon: &TrayIcon) {
     tray_icon.set_tooltip(Some(tooltip)).ok();
 
     // Set the appropriate icon based on status
+    #[cfg(target_os = "windows")]
     let icon_path = match status {
         AppStatus::LoadingModel => "./icons/loading.ico",
         AppStatus::WaitingForHotkey => "./icons/not-recording.ico",
         AppStatus::Recording => "./icons/recording.ico",
         AppStatus::Transcribing => "./icons/not-recording.ico",
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let icon_path = match status {
+        AppStatus::LoadingModel => "./icons/loading.png",
+        AppStatus::WaitingForHotkey => "./icons/not-recording.png",
+        AppStatus::Recording => "./icons/recording.png",
+        AppStatus::Transcribing => "./icons/not-recording.png",
     };
 
     if let Ok(icon) = Icon::from_path(icon_path, Some((32, 32))) {
@@ -160,8 +169,13 @@ fn main() {
     let quit_id = quit_item.id().clone();
 
     // Load initial icon
+    #[cfg(target_os = "windows")]
     let loading_icon = Icon::from_path("./icons/loading.ico", Some((32, 32)))
         .expect("Failed to load loading.ico icon");
+
+    #[cfg(not(target_os = "windows"))]
+    let loading_icon = Icon::from_path("./icons/loading.png", Some((32, 32)))
+        .expect("Failed to load loading.png icon");
 
     // Create tray icon
     let tray_icon = TrayIconBuilder::new()
@@ -179,6 +193,8 @@ fn main() {
     let providers_to_try = vec![
         #[cfg(target_os = "windows")]
         Some("dml".to_string()), // DirectML - works with any GPU on Windows
+        #[cfg(not(target_os = "windows"))]
+        Some("rocm".to_string()), // ROCm for AMD GPUs on Linux
         #[cfg(not(target_os = "windows"))]
         Some("cuda".to_string()), // CUDA for NVIDIA GPUs on Linux/Mac
         None, // CPU fallback

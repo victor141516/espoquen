@@ -1,6 +1,6 @@
 # Esponquen - Speech-to-Text Desktop App
 
-A desktop speech-to-text application for Windows.
+A cross-platform desktop speech-to-text application for Windows and Linux.
 
 ## Features
 
@@ -13,9 +13,11 @@ A desktop speech-to-text application for Windows.
 
 ## Prerequisites
 
+### Windows
+
 To build this project on Windows, you need:
 
-### 1. Install LLVM (for libclang)
+#### 1. Install LLVM (for libclang)
 
 Download and install LLVM from: https://releases.llvm.org/
 
@@ -24,15 +26,40 @@ After installation, add LLVM to your PATH:
 - Default path: `C:\Program Files\LLVM\bin`
 - Or set the `LIBCLANG_PATH` environment variable to point to the LLVM bin directory
 
-### 2. Install CMake
+#### 2. Install CMake
 
 Download from: https://cmake.org/download/
 
-### 3. Install Visual Studio Build Tools
+#### 3. Install Visual Studio Build Tools
 
 Download from: https://visualstudio.microsoft.com/downloads/
 
 - Install "Desktop development with C++" workload
+
+### Linux/Ubuntu
+
+To build this project on Ubuntu/Debian-based systems:
+
+```bash
+# Install build essentials and dependencies
+sudo apt update
+sudo apt install -y build-essential cmake pkg-config
+sudo apt install -y libx11-dev libxtst-dev libxdo-dev
+sudo apt install -y libasound2-dev
+sudo apt install -y libgtk-3-dev
+sudo apt install -y llvm clang libclang-dev
+
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**Required system libraries:**
+
+- **X11 and XTest**: For keyboard event handling (`libx11-dev`, `libxtst-dev`)
+- **xdotool**: For keyboard simulation (`libxdo-dev`)
+- **ALSA**: For audio recording (`libasound2-dev`)
+- **GTK3**: For system tray icon (`libgtk-3-dev`)
+- **LLVM/Clang**: For sherpa-rs compilation
 
 ## Model Setup
 
@@ -56,35 +83,46 @@ cargo build --release
 
 ### Distribution Package
 
-To create a complete distribution package with all required files:
+#### Windows
 
 ```bash
 build-dist.bat
 ```
 
-This script will:
+#### Linux/Ubuntu
+
+```bash
+chmod +x build-dist.sh
+./build-dist.sh
+```
+
+Both scripts will:
 
 1. Build the release binary
 2. Create a `dist/` directory
 3. Copy the executable
 4. Copy the `model/` directory
 5. Copy the `icons/` directory
-6. Copy any required DLL files
+6. Copy any required files
 
 The complete package will be in the `dist/` folder, ready to distribute or move to another location.
 
 ## Running the App
 
-By default, the app runs without a console window (background mode):
+### Windows
 
 ```bash
 cargo run --release
+# Or
+target\release\esponquen.exe
 ```
 
-Or run the executable directly:
+### Linux
 
 ```bash
-target/release/esponquen.exe
+cargo run --release
+# Or
+./target/release/esponquen
 ```
 
 ### Debug Mode with Console
@@ -195,13 +233,58 @@ cargo run --example custom_hotkey
 - **cpal**: Cross-platform audio I/O
 - **rdev**: Keyboard event listening (hotkey detection)
 - **enigo**: Keyboard simulation (auto-typing)
+- **tray-icon**: System tray integration
+- **winit**: Event loop for GUI
 
 ### Architecture
 
 - Model loads once at startup for fast transcription
 - Audio recorded in-memory with cpal
-- F9 hotkey detected via rdev
+- Hotkey detected via rdev with grab feature (blocks default actions)
 - Text output simulated with enigo
+
+### GPU Acceleration
+
+The app automatically detects and uses GPU acceleration when available:
+
+- **Windows**: DirectML (works with any GPU - NVIDIA, AMD, Intel)
+- **Linux**:
+  - ROCm (AMD GPUs) - **tried first**
+  - CUDA (NVIDIA GPUs) - fallback
+- **Fallback**: CPU with 4 threads
+
+**Linux AMD GPU Setup (ROCm):**
+
+For AMD GPUs (including APUs like Ryzen with Radeon Graphics):
+
+```bash
+# Ubuntu 22.04/24.04 - Install ROCm
+wget https://repo.radeon.com/amdgpu-install/latest/ubuntu/jammy/amdgpu-install_6.0.60000-1_all.deb
+sudo apt install ./amdgpu-install_6.0.60000-1_all.deb
+sudo amdgpu-install --usecase=rocm
+
+# Verify ROCm installation
+rocminfo
+```
+
+**Linux NVIDIA GPU Setup (CUDA):**
+
+For NVIDIA GPUs:
+
+```bash
+# Ubuntu/Debian
+sudo apt install nvidia-cuda-toolkit
+
+# Verify CUDA installation
+nvcc --version
+```
+
+The app will automatically try ROCm first, then CUDA, then fall back to CPU. Check with `--console` flag to see which provider is being used.
+
+**Note:** ROCm works with most modern AMD GPUs including:
+
+- Discrete AMD GPUs (RX 5000/6000/7000 series)
+- AMD APUs (Ryzen with integrated Radeon Graphics)
 
 ## Resources
 
